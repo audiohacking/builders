@@ -129,7 +129,7 @@ jobs:
         shell: bash
         run: |
           tag=$(sed -n 's/^truce[[:space:]]\{1,\}=.*tag[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' Cargo.toml | head -1)
-          echo "tag=$tag" > "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Install cargo-truce
         run: cargo install cargo-truce --git https://github.com/truce-audio/truce --tag "${{ steps.truce.outputs.tag }}" --locked --force
@@ -138,7 +138,7 @@ jobs:
         id: version
         run: |
           v=$(awk -F\" '/^version[[:space:]]*=/ { print $2; exit }' Cargo.toml)
-          echo "pkg=$v" > "$GITHUB_OUTPUT"
+          echo "pkg=$v" >> "$GITHUB_OUTPUT"
 
       - name: Build macOS plugin bundles
         if: matrix.os == 'macos'

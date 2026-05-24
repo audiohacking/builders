@@ -50,3 +50,17 @@ jobs:
     secrets:
       repo_access_token: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
 ```
+
+## Manual workflow for `audiohacking/aitroce-vst`
+
+This repository also includes `.github/workflows/manual-aitroce-vst-build.yml`, a `workflow_dispatch` entrypoint that targets `audiohacking/aitroce-vst`.
+
+When manually running that workflow, provide:
+
+- `release_tag` (required)
+- `artifact_paths` (required, newline-delimited globs/paths)
+- optional `source_ref`, `build_command`, `release_name`, and `release_notes`
+
+It uses the reusable workflow above and requires the repository secret:
+
+- `BUILDERS_REPO_ACCESS_TOKEN` (must read `audiohacking/aitroce-vst` and write release assets there)

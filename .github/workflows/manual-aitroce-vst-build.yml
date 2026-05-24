@@ -1,0 +1,47 @@
+name: Manual Build and Release (aitroce-vst)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Branch, tag, or SHA to build from audiohacking/aitroce-vst
+        required: false
+        default: main
+        type: string
+      build_command:
+        description: Build command to run in audiohacking/aitroce-vst
+        required: true
+        default: make release
+        type: string
+      artifact_paths:
+        description: Newline-delimited file paths or glob patterns to upload
+        required: true
+        type: string
+      release_tag:
+        description: Release tag in audiohacking/aitroce-vst to upload artifacts to
+        required: true
+        type: string
+      release_name:
+        description: Optional release title when creating a release
+        required: false
+        default: ""
+        type: string
+      release_notes:
+        description: Optional release notes when creating a release
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  build-and-publish:
+    uses: ./.github/workflows/build-and-publish.yml
+    with:
+      source_repository: audiohacking/aitroce-vst
+      source_ref: ${{ inputs.source_ref }}
+      build_command: ${{ inputs.build_command }}
+      artifact_paths: ${{ inputs.artifact_paths }}
+      release_tag: ${{ inputs.release_tag }}
+      release_name: ${{ inputs.release_name }}
+      release_notes: ${{ inputs.release_notes }}
+    secrets:
+      repo_access_token: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}

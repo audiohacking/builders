@@ -32,6 +32,8 @@ on:
         default: ""
         type: string
 
+permissions: {}
+
 jobs:
   build-and-publish:
     uses: ./.github/workflows/build-and-publish.yml

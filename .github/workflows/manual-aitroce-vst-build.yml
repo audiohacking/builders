@@ -1,49 +1,208 @@
-name: Manual Build and Release (aitroce-vst)
+name: Release (aitroce-vst via builders)
 
 on:
   workflow_dispatch:
     inputs:
-      source_ref:
-        description: Branch, tag, or SHA to build from audiohacking/aitroce-vst
-        required: false
-        default: main
-        type: string
-      build_command:
-        description: Build command to run in audiohacking/aitroce-vst
-        required: true
-        default: make release
-        type: string
-      artifact_paths:
-        description: Newline-delimited file paths or glob patterns to upload
-        required: true
-        type: string
       release_tag:
-        description: Release tag in audiohacking/aitroce-vst to upload artifacts to
+        description: Release tag in audiohacking/aitroce-vst (must start with v)
         required: true
         type: string
-      release_name:
-        description: Optional release title when creating a release
+      source_ref:
+        description: Optional branch, tag, or SHA to build (defaults to release_tag)
         required: false
         default: ""
         type: string
-      release_notes:
-        description: Optional release notes when creating a release
-        required: false
-        default: ""
-        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
 
 permissions: {}
 
 jobs:
-  build-and-publish:
-    uses: ./.github/workflows/build-and-publish.yml
-    with:
-      source_repository: audiohacking/aitroce-vst
-      source_ref: ${{ inputs.source_ref }}
-      build_command: ${{ inputs.build_command }}
-      artifact_paths: ${{ inputs.artifact_paths }}
-      release_tag: ${{ inputs.release_tag }}
-      release_name: ${{ inputs.release_name }}
-      release_notes: ${{ inputs.release_notes }}
-    secrets:
-      repo_access_token: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
+  create-release:
+    name: Create release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      source_ref: ${{ steps.resolve.outputs.source_ref }}
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+    steps:
+      - name: Resolve and validate release inputs
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_tag="${{ inputs.release_tag }}"
+          source_ref="${{ inputs.source_ref }}"
+          if [[ ! "$release_tag" =~ ^v ]]; then
+            echo "release_tag must start with 'v'." >&2
+            exit 1
+          fi
+          if [ -z "$source_ref" ]; then
+            source_ref="$release_tag"
+          fi
+          prerelease=false
+          if [[ "$release_tag" == *-* ]]; then
+            prerelease=true
+          fi
+          {
+            echo "source_ref=$source_ref"
+            echo "release_tag=$release_tag"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Ensure release exists in source repository
+        env:
+          GH_TOKEN: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
+          RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
+          PRERELEASE: ${{ steps.resolve.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo audiohacking/aitroce-vst >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists in audiohacking/aitroce-vst"
+            exit 0
+          fi
+          create_args=("$RELEASE_TAG" "--repo" "audiohacking/aitroce-vst" "--generate-notes")
+          if [ "$PRERELEASE" = "true" ]; then
+            create_args+=("--prerelease")
+          fi
+          gh release create "${create_args[@]}"
+
+  build-vst3:
+    name: VST3 (${{ matrix.platform }})
+    needs: create-release
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-14
+            os: macos
+          - platform: linux
+            runner: ubuntu-24.04
+            os: linux
+          - platform: windows
+            runner: windows-latest
+            os: windows
+
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          repository: audiohacking/aitroce-vst
+          ref: ${{ needs.create-release.outputs.source_ref }}
+          token: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.90"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.runner }}-release
+
+      - name: Linux system deps
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev libxcursor-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libxrandr-dev \
+            libgl1-mesa-dev libvulkan-dev mesa-vulkan-drivers \
+            libasound2-dev libjack-jackd2-dev \
+            libfontconfig1-dev libfreetype-dev
+
+      - name: Read TRUCE tag
+        id: truce
+        shell: bash
+        run: |
+          tag=$(sed -n 's/^truce[[:space:]]\{1,\}=.*tag[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' Cargo.toml | head -1)
+          echo "tag=$tag" > "$GITHUB_OUTPUT"
+
+      - name: Install cargo-truce
+        run: cargo install cargo-truce --git https://github.com/truce-audio/truce --tag "${{ steps.truce.outputs.tag }}" --locked --force
+
+      - name: Read package version
+        id: version
+        run: |
+          v=$(awk -F\" '/^version[[:space:]]*=/ { print $2; exit }' Cargo.toml)
+          echo "pkg=$v" > "$GITHUB_OUTPUT"
+
+      - name: Build macOS plugin bundles
+        if: matrix.os == 'macos'
+        run: cargo truce build --vst3 --au2
+
+      - name: Build VST3 bundle
+        if: matrix.os != 'macos'
+        run: cargo truce build --vst3
+
+      - name: Package macOS AU, VST3, and .pkg installer
+        if: matrix.os == 'macos'
+        run: |
+          ./scripts/build-installer-pkg.sh --version "${{ steps.version.outputs.pkg }}" --sign-plugins
+
+      - name: Package Linux VST3
+        if: matrix.os == 'linux'
+        run: |
+          out="aitroce-${{ steps.version.outputs.pkg }}-linux-vst3.tar.gz"
+          cd target/bundles
+          tar -czf "../../${out}" Aitroce.vst3
+
+      - name: Package Windows VST3
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $out = "aitroce-${{ steps.version.outputs.pkg }}-windows-vst3.zip"
+          Compress-Archive -Path target/bundles/Aitroce.vst3 -DestinationPath $out -Force
+
+      - name: Verify macOS release artefacts
+        if: matrix.os == 'macos'
+        run: |
+          ver="${{ steps.version.outputs.pkg }}"
+          zip="release-artefacts/aitroce-${ver}-macos-au-vst3.zip"
+          pkg="release-artefacts/Aitroce-macOS-Installer.pkg"
+          test -f "$zip"
+          test -f "$pkg"
+          test -d release-artefacts/Aitroce.component
+          test -d release-artefacts/Aitroce.vst3
+          ls -lh release-artefacts/
+
+      - name: Upload to source release
+        env:
+          GH_TOKEN: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.release_tag }}
+        run: |
+          ver="${{ steps.version.outputs.pkg }}"
+          case "${{ matrix.os }}" in
+            macos)
+              gh release upload "$RELEASE_TAG" \
+                "release-artefacts/aitroce-${ver}-macos-au-vst3.zip" \
+                "release-artefacts/Aitroce-macOS-Installer.pkg" \
+                --repo audiohacking/aitroce-vst \
+                --clobber
+              ;;
+            linux)
+              gh release upload "$RELEASE_TAG" \
+                "aitroce-${ver}-linux-vst3.tar.gz" \
+                --repo audiohacking/aitroce-vst \
+                --clobber
+              ;;
+            windows)
+              gh release upload "$RELEASE_TAG" \
+                "aitroce-${ver}-windows-vst3.zip" \
+                --repo audiohacking/aitroce-vst \
+                --clobber
+              ;;
+          esac

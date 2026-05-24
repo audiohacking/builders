@@ -60,16 +60,25 @@ jobs:
       repo_access_token: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
 ```
 
-## Manual workflow for `audiohacking/aitroce-vst`
+## Release workflow for `audiohacking/aitroce-vst`
 
-This repository also includes `.github/workflows/manual-aitroce-vst-build.yml`, a `workflow_dispatch` entrypoint that targets `audiohacking/aitroce-vst`.
+This repository includes `.github/workflows/manual-aitroce-vst-build.yml`, a `workflow_dispatch` entrypoint that ports the `aitroce-vst` release build into the builders repository.
 
-When manually running that workflow, provide:
+What it does:
 
-- `release_tag` (required)
-- `artifact_paths` (required, newline-delimited globs/paths)
-- optional `source_ref`, `build_command`, `release_name`, and `release_notes`
+- resolves/validates release tag and source ref
+- ensures the release exists in `audiohacking/aitroce-vst`
+- runs a macOS/Linux/Windows matrix build for VST3 (plus AU/.pkg on macOS)
+- uploads generated artifacts back to the release in `audiohacking/aitroce-vst`
 
-It uses the reusable workflow above and requires the repository secret:
+Required manual input:
+
+- `release_tag` (must start with `v`)
+
+Optional manual input:
+
+- `source_ref` (branch/tag/SHA to build; defaults to `release_tag`)
+
+It requires the repository secret:
 
 - `BUILDERS_REPO_ACCESS_TOKEN` (must read `audiohacking/aitroce-vst` and write release assets there)

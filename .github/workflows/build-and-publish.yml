@@ -1,0 +1,120 @@
+name: Build and Publish for Source Repository
+
+on:
+  workflow_call:
+    inputs:
+      source_repository:
+        description: Repository to build (owner/name)
+        required: true
+        type: string
+      source_ref:
+        description: Branch, tag, or SHA to build
+        required: false
+        default: main
+        type: string
+      build_command:
+        description: Command to run the source repository build/CI
+        required: true
+        type: string
+      artifact_paths:
+        description: Newline-delimited list of files/globs to upload to the release
+        required: true
+        type: string
+      release_tag:
+        description: Release tag in the source repository where artifacts should be uploaded
+        required: true
+        type: string
+      release_name:
+        description: Optional release title when creating a release
+        required: false
+        default: ""
+        type: string
+      release_notes:
+        description: Optional release notes when creating a release
+        required: false
+        default: ""
+        type: string
+    secrets:
+      repo_access_token:
+        description: Token with read access to source repo and write access to source releases
+        required: true
+
+jobs:
+  build-and-publish:
+    name: Build and publish artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.source_repository }}
+          ref: ${{ inputs.source_ref }}
+          token: ${{ secrets.repo_access_token }}
+
+      - name: Build source project
+        shell: bash
+        run: ${{ inputs.build_command }}
+
+      - name: Resolve artifacts
+        id: artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob globstar
+
+          mapfile -t patterns < <(printf '%s\n' "${{ inputs.artifact_paths }}" | sed '/^[[:space:]]*$/d')
+          if [ "${#patterns[@]}" -eq 0 ]; then
+            echo "No artifact paths provided." >&2
+            exit 1
+          fi
+
+          files=()
+          for pattern in "${patterns[@]}"; do
+            for match in $pattern; do
+              files+=("$match")
+            done
+          done
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No files matched artifact_paths:" >&2
+            printf '  %s\n' "${patterns[@]}" >&2
+            exit 1
+          fi
+
+          {
+            echo "files<<EOF"
+            printf '%s\n' "${files[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Ensure release exists
+        env:
+          GH_TOKEN: ${{ secrets.repo_access_token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "${{ inputs.release_tag }}" --repo "${{ inputs.source_repository }}" >/dev/null 2>&1; then
+            echo "Release ${{ inputs.release_tag }} already exists"
+            exit 0
+          fi
+
+          create_args=("${{ inputs.release_tag }}" "--repo" "${{ inputs.source_repository }}")
+          if [ -n "${{ inputs.release_name }}" ]; then
+            create_args+=("--title" "${{ inputs.release_name }}")
+          fi
+          if [ -n "${{ inputs.release_notes }}" ]; then
+            create_args+=("--notes" "${{ inputs.release_notes }}")
+          fi
+
+          gh release create "${create_args[@]}"
+
+      - name: Upload artifacts to source release
+        env:
+          GH_TOKEN: ${{ secrets.repo_access_token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(printf '%s\n' "${{ steps.artifacts.outputs.files }}" | sed '/^[[:space:]]*$/d')
+          gh release upload "${{ inputs.release_tag }}" "${files[@]}" --repo "${{ inputs.source_repository }}" --clobber

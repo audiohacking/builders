@@ -34,6 +34,11 @@ on:
         required: false
         default: ""
         type: string
+    secrets:
+      BUILDERS_REPO_ACCESS_TOKEN:
+        description: PAT with read access to source repos and release write permissions
+        required: true
+
 permissions: {}
 
 jobs:

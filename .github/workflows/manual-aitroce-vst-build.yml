@@ -30,6 +30,12 @@ jobs:
       release_tag: ${{ steps.resolve.outputs.release_tag }}
       prerelease: ${{ steps.resolve.outputs.prerelease }}
     steps:
+      - name: Mint cross-repo token
+        id: cross-repo-token
+        uses: ./.github/actions/cross-repo-token
+        with:
+          repositories: aitroce-vst
+
       - name: Resolve and validate release inputs
         id: resolve
         shell: bash
@@ -56,7 +62,7 @@ jobs:
 
       - name: Ensure release exists in source repository
         env:
-          GH_TOKEN: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
+          GH_TOKEN: ${{ steps.cross-repo-token.outputs.token }}
           RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
           PRERELEASE: ${{ steps.resolve.outputs.prerelease }}
         shell: bash
@@ -96,12 +102,18 @@ jobs:
             os: windows
 
     steps:
+      - name: Mint cross-repo token
+        id: cross-repo-token
+        uses: ./.github/actions/cross-repo-token
+        with:
+          repositories: aitroce-vst
+
       - name: Checkout source repository
         uses: actions/checkout@v4
         with:
           repository: audiohacking/aitroce-vst
           ref: ${{ needs.create-release.outputs.source_ref }}
-          token: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
+          token: ${{ steps.cross-repo-token.outputs.token }}
           persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@stable
@@ -181,7 +193,7 @@ jobs:
 
       - name: Upload to source release
         env:
-          GH_TOKEN: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
+          GH_TOKEN: ${{ steps.cross-repo-token.outputs.token }}
           RELEASE_TAG: ${{ needs.create-release.outputs.release_tag }}
         run: |
           ver="${{ steps.version.outputs.pkg }}"

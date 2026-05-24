@@ -12,6 +12,20 @@ It is intended for repositories in this organization that need centralized build
 - run the source repository build/CI command
 - write release assets to the same source repository
 
+### Authentication (why not `github.token`?)
+
+Workflows in this repository target **other** `audiohacking/*` repositories (often private). The built-in `GITHUB_TOKEN` (`${{ github.token }}`) is scoped only to **audiohacking/builders** — it cannot checkout private source trees or upload release assets elsewhere. That is why `gh` fails with “set the GH_TOKEN environment variable” when no cross-repo credential is configured.
+
+Use one of these (configured on **audiohacking/builders**):
+
+1. **GitHub App (recommended)** — short-lived installation tokens via [`actions/create-github-app-token`](https://github.com/actions/create-github-app-token), wired through [`.github/actions/cross-repo-token`](.github/actions/cross-repo-token):
+   - Repository variable: `BUILDERS_GITHUB_APP_ID`
+   - Repository (or org) secret: `BUILDERS_GITHUB_APP_PRIVATE_KEY`
+   - Create an org GitHub App installed on `audiohacking` with **Contents: Read and write** on the private repos you build, and **Metadata: Read**.
+2. **PAT fallback** — repository secret `BUILDERS_REPO_ACCESS_TOKEN` with the same effective access (classic or fine-grained PAT).
+
+Every `gh` step and `actions/checkout` for a source repo uses the token from that composite action, not `${{ github.token }}`.
+
 ### Permission and data-leakage model
 
 To prevent private code/artifact leakage through this public builders repository:
@@ -27,7 +41,7 @@ To prevent private code/artifact leakage through this public builders repository
 - `build_command`: shell command to run the project build
 - `artifact_paths`: newline-delimited file paths or glob patterns to upload
 - `release_tag`: release tag in the source repository
-- `repo_access_token` (secret): token with read access to the source repo and release write permissions
+- `repo_access_token` (secret, optional): PAT override when not using the org GitHub App on builders
 
 Optional inputs:
 
@@ -56,8 +70,7 @@ jobs:
       release_tag: v1.2.3
       release_name: v1.2.3
       release_notes: Automated build from builders repo
-    secrets:
-      repo_access_token: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
+    # secrets.repo_access_token is optional when BUILDERS_GITHUB_APP_* is set on builders
 ```
 
 ## Release workflow for `audiohacking/aitroce-vst`
@@ -79,6 +92,4 @@ Optional manual input:
 
 - `source_ref` (branch/tag/SHA to build; defaults to `release_tag`)
 
-It requires the repository secret:
-
-- `BUILDERS_REPO_ACCESS_TOKEN` (must read `audiohacking/aitroce-vst` and write release assets there)
+It requires cross-repo authentication on **audiohacking/builders** (see [Authentication](#authentication-why-not-githubtoken)) — either the org GitHub App (`BUILDERS_GITHUB_APP_ID` + `BUILDERS_GITHUB_APP_PRIVATE_KEY`) or `BUILDERS_REPO_ACCESS_TOKEN`.

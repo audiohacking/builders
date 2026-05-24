@@ -1,0 +1,77 @@
+name: Cross-repo token
+description: >-
+  Mint a short-lived GitHub App installation token for audiohacking private
+  repositories, or fall back to an optional PAT. GITHUB_TOKEN (github.token)
+  cannot access other private repositories from this workflow.
+inputs:
+  repositories:
+    description: >-
+      Comma- or newline-separated repository names without owner (e.g.
+      aitroce-vst or repo-a,repo-b)
+    required: true
+  owner:
+    description: Repository owner
+    required: false
+    default: audiohacking
+  access_token:
+    description: Optional PAT override (e.g. from workflow_call secrets)
+    required: false
+    default: ""
+outputs:
+  token:
+    description: Token for checkout and gh CLI against the listed repositories
+    value: ${{ steps.resolve.outputs.token }}
+  source:
+    description: github-app, pat-input, or pat-secret
+    value: ${{ steps.resolve.outputs.source }}
+runs:
+  using: composite
+  steps:
+    - name: Create GitHub App installation token
+      id: app-token
+      if: vars.BUILDERS_GITHUB_APP_ID != ''
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ vars.BUILDERS_GITHUB_APP_ID }}
+        private-key: ${{ secrets.BUILDERS_GITHUB_APP_PRIVATE_KEY }}
+        owner: ${{ inputs.owner }}
+        repositories: ${{ inputs.repositories }}
+
+    - name: Resolve token for cross-repo access
+      id: resolve
+      shell: bash
+      env:
+        APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        PAT_INPUT: ${{ inputs.access_token }}
+        PAT_SECRET: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
+      run: |
+        set -euo pipefail
+        if [ -n "${APP_TOKEN:-}" ]; then
+          echo "token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
+          echo "source=github-app" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        if [ -n "${PAT_INPUT:-}" ]; then
+          echo "token=$PAT_INPUT" >> "$GITHUB_OUTPUT"
+          echo "source=pat-input" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        if [ -n "${PAT_SECRET:-}" ]; then
+          echo "token=$PAT_SECRET" >> "$GITHUB_OUTPUT"
+          echo "source=pat-secret" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        cat >&2 <<'EOF'
+        Cross-repo access is not configured.
+
+        GITHUB_TOKEN (github.token) only works for the repository that runs this
+        workflow (audiohacking/builders). It cannot checkout or upload releases
+        on other private repositories.
+
+        Configure one of:
+          • GitHub App (recommended): repository variable BUILDERS_GITHUB_APP_ID
+            and secret BUILDERS_GITHUB_APP_PRIVATE_KEY (org-wide app installed
+            on audiohacking with Contents read/write on target repos)
+          • PAT fallback: secret BUILDERS_REPO_ACCESS_TOKEN
+        EOF
+        exit 1

@@ -12,6 +12,15 @@ It is intended for repositories in this organization that need centralized build
 - run the source repository build/CI command
 - write release assets to the same source repository
 
+### Permission and data-leakage model
+
+To prevent private code/artifact leakage through this public builders repository:
+
+- `source_repository` is restricted to `audiohacking/*` in the reusable workflow
+- checkout uses `persist-credentials: false` so credentials are not persisted in git config
+- workflow/job `GITHUB_TOKEN` permissions are explicitly minimized
+- artifacts are uploaded only to the same `source_repository` that was built
+
 ### Required workflow inputs
 
 - `source_repository`: `owner/repo` to build

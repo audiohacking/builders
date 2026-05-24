@@ -34,13 +34,6 @@ on:
         required: false
         default: ""
         type: string
-    secrets:
-      repo_access_token:
-        description: >-
-          Optional PAT with read access to the source repo and release write
-          permissions. Omit when using the org GitHub App on audiohacking/builders.
-        required: false
-
 permissions: {}
 
 jobs:
@@ -51,7 +44,6 @@ jobs:
       contents: read
     steps:
       - name: Validate source repository scope
-        id: scope
         shell: bash
         run: |
           set -euo pipefail
@@ -62,23 +54,13 @@ jobs:
               exit 1
               ;;
           esac
-          repo_name="${{ inputs.source_repository }}"
-          repo_name="${repo_name#audiohacking/}"
-          echo "repo_name=$repo_name" >> "$GITHUB_OUTPUT"
-
-      - name: Mint cross-repo token
-        id: cross-repo-token
-        uses: ${{ github.repository }}/.github/actions/cross-repo-token@${{ github.sha }}
-        with:
-          repositories: ${{ steps.scope.outputs.repo_name }}
-          access_token: ${{ secrets.repo_access_token }}
 
       - name: Checkout source repository
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.source_repository }}
           ref: ${{ inputs.source_ref }}
-          token: ${{ steps.cross-repo-token.outputs.token }}
+          token: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
           persist-credentials: false
 
       - name: Build source project
@@ -128,7 +110,7 @@ jobs:
 
       - name: Ensure release exists
         env:
-          GH_TOKEN: ${{ steps.cross-repo-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
           RELEASE_NAME: ${{ inputs.release_name }}
           RELEASE_NOTES: ${{ inputs.release_notes }}
         shell: bash
@@ -151,7 +133,7 @@ jobs:
 
       - name: Upload artifacts to source release
         env:
-          GH_TOKEN: ${{ steps.cross-repo-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.BUILDERS_REPO_ACCESS_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail

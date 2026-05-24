@@ -32,7 +32,7 @@ jobs:
     steps:
       - name: Mint cross-repo token
         id: cross-repo-token
-        uses: ./.github/actions/cross-repo-token
+        uses: ${{ github.repository }}/.github/actions/cross-repo-token@${{ github.sha }}
         with:
           repositories: aitroce-vst
 
@@ -104,7 +104,7 @@ jobs:
     steps:
       - name: Mint cross-repo token
         id: cross-repo-token
-        uses: ./.github/actions/cross-repo-token
+        uses: ${{ github.repository }}/.github/actions/cross-repo-token@${{ github.sha }}
         with:
           repositories: aitroce-vst
 

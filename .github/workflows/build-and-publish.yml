@@ -68,7 +68,7 @@ jobs:
 
       - name: Mint cross-repo token
         id: cross-repo-token
-        uses: ./.github/actions/cross-repo-token
+        uses: ${{ github.repository }}/.github/actions/cross-repo-token@${{ github.sha }}
         with:
           repositories: ${{ steps.scope.outputs.repo_name }}
           access_token: ${{ secrets.repo_access_token }}

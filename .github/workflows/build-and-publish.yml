@@ -64,7 +64,7 @@ jobs:
           set -euo pipefail
           shopt -s nullglob globstar
 
-          mapfile -t patterns < <(printf '%s\n' "${{ inputs.artifact_paths }}" | sed '/^[[:space:]]*$/d')
+          mapfile -t patterns < <(printf '%s\n' "${{ inputs.artifact_paths }}" | awk 'NF')
           if [ "${#patterns[@]}" -eq 0 ]; then
             echo "No artifact paths provided." >&2
             exit 1
@@ -116,5 +116,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t files < <(printf '%s\n' "${{ steps.artifacts.outputs.files }}" | sed '/^[[:space:]]*$/d')
+          mapfile -t files < <(printf '%s\n' "${{ steps.artifacts.outputs.files }}" | awk 'NF')
           gh release upload "${{ inputs.release_tag }}" "${files[@]}" --repo "${{ inputs.source_repository }}" --clobber

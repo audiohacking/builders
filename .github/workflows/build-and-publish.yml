@@ -85,16 +85,26 @@ jobs:
           fi
 
           files=()
+          unmatched_patterns=()
           for pattern in "${patterns[@]}"; do
+            matched=false
             while IFS= read -r match; do
+              matched=true
               files+=("$match")
             done < <(compgen -G "$pattern" || true)
+            if [ "$matched" = false ]; then
+              unmatched_patterns+=("$pattern")
+            fi
           done
 
           if [ "${#files[@]}" -eq 0 ]; then
             echo "No files matched artifact_paths:" >&2
             printf '  %s\n' "${patterns[@]}" >&2
             exit 1
+          fi
+          if [ "${#unmatched_patterns[@]}" -gt 0 ]; then
+            echo "Some artifact paths did not match any files:" >&2
+            printf '  %s\n' "${unmatched_patterns[@]}" >&2
           fi
 
           {
@@ -132,5 +142,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t files < <(printf '%s\n' "${{ steps.artifacts.outputs.files }}" | awk 'NF')
+          mapfile -t files <<< "${{ steps.artifacts.outputs.files }}"
           gh release upload "${{ inputs.release_tag }}" "${files[@]}" --repo "${{ inputs.source_repository }}" --clobber
